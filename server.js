@@ -1,65 +1,107 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import nano from "nano";
-import dotenv from "dotenv";
-
-dotenv.config();
+import fetch from "node-fetch";
 
 const app = express();
-app.use(cors());
 app.use(bodyParser.json());
+app.use(cors());
 
-const couchUrl = process.env.COUCHDB_URL;
-const dbName = process.env.COUCHDB_DB;
-const adminPin = process.env.ADMIN_PIN;
+// Environment Variables
+const COUCHDB_URL = process.env.COUCHDB_URL;
+const db = new PouchDB(couchUrl + '/gaminglogs');
+const ADMIN_PIN = process.env.ADMIN_PIN || "1526";
 
-const nanoClient = nano(couchUrl);
-const logsDB = nanoClient.db.use(dbName);
-
-// Add log
+// 🔹 Add log entry
 app.post("/add-log", async (req, res) => {
   try {
-    const log = {
-      ...req.body,
-      createdAt: new Date().toLocaleDateString("en-GB"), // dd/mm/yyyy
-    };
-    const response = await logsDB.insert(log);
-    res.json({ ok: true, id: response.id });
+    const doc = req.body;
+
+    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(doc),
+    });
+
+    const data = await response.json();
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to add log" });
   }
 });
 
-// Get all logs
+// 🔹 Get all logs
 app.get("/logs", async (req, res) => {
   try {
-    const docs = await logsDB.list({ include_docs: true });
-    const logs = docs.rows.map(r => r.doc);
+    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_all_docs?include_docs=true`);
+    const data = await response.json();
+    const logs = data.rows.map((row) => row.doc);
     res.json(logs);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch logs" });
   }
 });
 
-// Reset logs (admin only)
-app.post("/reset", async (req, res) => {
-  const { pin } = req.body;
-  if (pin !== adminPin) {
-    return res.status(403).json({ error: "Invalid PIN" });
-  }
-
+// 🔹 Edit a log
+app.put("/edit-log/:id", async (req, res) => {
   try {
-    const docs = await logsDB.list({ include_docs: true });
-    for (const row of docs.rows) {
-      await logsDB.destroy(row.id, row.value.rev);
-    }
-    res.json({ ok: true, msg: "Logs reset done!" });
+    const { id } = req.params;
+    const updatedDoc = req.body;
+
+    // Fetch existing doc first
+    const getRes = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/${id}`);
+    const existingDoc = await getRes.json();
+
+    // Merge _rev so CouchDB accepts update
+    updatedDoc._rev = existingDoc._rev;
+
+    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedDoc),
+    });
+
+    const data = await response.json();
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to edit log" });
   }
 });
 
-app.listen(5000, () => {
-  console.log("✅ Backend running on port 5000");
+// 🔹 Reset logs (Admin only)
+app.post("/reset-logs", async (req, res) => {
+  try {
+    const { pin } = req.body;
+    if (pin !== ADMIN_PIN) {
+      return res.status(403).json({ error: "Invalid PIN" });
+    }
+
+    // Fetch all docs
+    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_all_docs?include_docs=true`);
+    const data = await response.json();
+
+    // Mark docs as deleted
+    const deletions = data.rows.map((row) => ({
+      ...row.doc,
+      _deleted: true,
+    }));
+
+    // Bulk delete
+    await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_bulk_docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docs: deletions }),
+    });
+
+    res.json({ success: true, message: "Logs reset successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to reset logs" });
+  }
 });
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
