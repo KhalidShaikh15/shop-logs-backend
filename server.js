@@ -1,42 +1,34 @@
 import express from "express";
 import cors from "cors";
 import PouchDB from "pouchdb";
-import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 🔹 Environment Variables
-// Make sure to set COUCHDB_USER and COUCHDB_PASS in your environment
-const COUCHDB_HOST = process.env.COUCHDB_HOST || "127.0.0.1:5984";
-const COUCHDB_USER = process.env.COUCHDB_USER || "khalid";
-const COUCHDB_PASS = process.env.COUCHDB_PASS || "root@root";
+// 🔹 CouchDB credentials and ngrok host
+const COUCHDB_USER = "khalid";
+const COUCHDB_PASS = encodeURIComponent("root@root"); // URL-encode special characters
+const COUCHDB_HOST = "b78ce8d13175.ngrok-free.app"; // your ngrok URL
 const COUCHDB_DB = "gaminglogs";
-const ADMIN_PIN = process.env.ADMIN_PIN || "1526";
+const ADMIN_PIN = "1526"; // change if needed
 
-// Construct CouchDB URL with credentials
-const COUCHDB_URL = `http://${COUCHDB_USER}:${COUCHDB_PASS}@${COUCHDB_HOST}`;
+// Construct CouchDB URL with authentication
+const COUCHDB_URL = `https://${COUCHDB_USER}:${COUCHDB_PASS}@${COUCHDB_HOST}`;
 
-// 🔹 Initialize PouchDB
+// Initialize PouchDB
 const db = new PouchDB(`${COUCHDB_URL}/${COUCHDB_DB}`);
 
-// 🔹 Check if database exists, create if not
-const initDB = async () => {
+// 🔹 Test database connection
+const testConnection = async () => {
   try {
-    await db.info();
-    console.log(`Database "${COUCHDB_DB}" exists ✅`);
+    const info = await db.info();
+    console.log(`Connected to CouchDB database "${info.db_name}" ✅`);
   } catch (err) {
-    if (err.status === 404) {
-      console.log(`Database "${COUCHDB_DB}" not found. Creating...`);
-      await fetch(`${COUCHDB_URL}/${COUCHDB_DB}`, { method: "PUT" });
-      console.log(`Database "${COUCHDB_DB}" created ✅`);
-    } else {
-      console.error("Error connecting to database:", err);
-    }
+    console.error("Failed to connect to CouchDB:", err);
   }
 };
-await initDB();
+await testConnection();
 
 // 🔹 Add log entry
 app.post("/add-log", async (req, res) => {
