@@ -10,8 +10,8 @@ app.use(cors());
 // 🔹 Environment Variables
 // Make sure to set COUCHDB_USER and COUCHDB_PASS in your environment
 const COUCHDB_HOST = process.env.COUCHDB_HOST || "127.0.0.1:5984";
-const COUCHDB_USER = process.env.COUCHDB_USER || "admin";
-const COUCHDB_PASS = process.env.COUCHDB_PASS || "password";
+const COUCHDB_USER = process.env.COUCHDB_USER || "khalid";
+const COUCHDB_PASS = process.env.COUCHDB_PASS || "root@root";
 const COUCHDB_DB = "gaminglogs";
 const ADMIN_PIN = process.env.ADMIN_PIN || "1526";
 
