@@ -1,30 +1,23 @@
 import express from "express";
-import bodyParser from "body-parser";
 import cors from "cors";
-import fetch from "node-fetch";
+import PouchDB from "pouchdb";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(cors());
 
 // Environment Variables
-const COUCHDB_URL = process.env.COUCHDB_URL;
-const db = new PouchDB(couchUrl + '/gaminglogs');
+const COUCHDB_URL = process.env.COUCHDB_URL || "http://localhost:5984";
+const COUCHDB_DB = "gaminglogs";
+const db = new PouchDB(`${COUCHDB_URL}/${COUCHDB_DB}`);
 const ADMIN_PIN = process.env.ADMIN_PIN || "1526";
 
 // 🔹 Add log entry
 app.post("/add-log", async (req, res) => {
   try {
     const doc = req.body;
-
-    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(doc),
-    });
-
-    const data = await response.json();
-    res.json(data);
+    const response = await db.post(doc); // PouchDB handles _id automatically
+    res.json(response);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to add log" });
@@ -34,9 +27,8 @@ app.post("/add-log", async (req, res) => {
 // 🔹 Get all logs
 app.get("/logs", async (req, res) => {
   try {
-    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_all_docs?include_docs=true`);
-    const data = await response.json();
-    const logs = data.rows.map((row) => row.doc);
+    const result = await db.allDocs({ include_docs: true });
+    const logs = result.rows.map((row) => row.doc);
     res.json(logs);
   } catch (err) {
     console.error(err);
@@ -50,52 +42,34 @@ app.put("/edit-log/:id", async (req, res) => {
     const { id } = req.params;
     const updatedDoc = req.body;
 
-    // Fetch existing doc first
-    const getRes = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/${id}`);
-    const existingDoc = await getRes.json();
+    // Fetch the existing document
+    const existingDoc = await db.get(id);
 
-    // Merge _rev so CouchDB accepts update
+    // Merge _rev to allow updating
     updatedDoc._rev = existingDoc._rev;
+    updatedDoc._id = id;
 
-    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updatedDoc),
-    });
-
-    const data = await response.json();
-    res.json(data);
+    const response = await db.put(updatedDoc);
+    res.json(response);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to edit log" });
   }
 });
 
-// 🔹 Reset logs (Admin only)
+// 🔹 Delete all logs (Admin only)
 app.post("/reset-logs", async (req, res) => {
   try {
     const { pin } = req.body;
-    if (pin !== ADMIN_PIN) {
-      return res.status(403).json({ error: "Invalid PIN" });
-    }
+    if (pin !== ADMIN_PIN) return res.status(403).json({ error: "Invalid PIN" });
 
-    // Fetch all docs
-    const response = await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_all_docs?include_docs=true`);
-    const data = await response.json();
-
-    // Mark docs as deleted
-    const deletions = data.rows.map((row) => ({
+    const result = await db.allDocs({ include_docs: true });
+    const deletions = result.rows.map((row) => ({
       ...row.doc,
       _deleted: true,
     }));
 
-    // Bulk delete
-    await fetch(`${COUCHDB_URL}/${COUCHDB_DB}/_bulk_docs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ docs: deletions }),
-    });
-
+    await db.bulkDocs(deletions);
     res.json({ success: true, message: "Logs reset successfully" });
   } catch (err) {
     console.error(err);
