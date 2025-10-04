@@ -5,15 +5,29 @@ import cors from "cors";
 
 dotenv.config();
 const app = express();
-app.use(cors());
 app.use(express.json());
 
+// 🔹 CORS configuration
+// Allow only your frontend origin (Netlify)
+const allowedOrigins = ["https://gamehouse26.netlify.app"];
+app.use(cors({
+  origin: function(origin, callback){
+    // allow requests with no origin (like Postman)
+    if(!origin) return callback(null, true);
+    if(allowedOrigins.indexOf(origin) === -1){
+      const msg = `CORS policy: This origin (${origin}) is not allowed.`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  }
+}));
+
+// 🔹 MongoDB Atlas Connection
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 
 let db;
 
-// Connect to MongoDB
 async function connectDB() {
   try {
     const client = new MongoClient(MONGO_URI);
@@ -28,7 +42,9 @@ async function connectDB() {
 
 connectDB();
 
-// API: Fetch all logs
+// 🔹 Routes
+
+// Get all logs
 app.get("/api/logs", async (req, res) => {
   try {
     const logs = await db.collection("logs").find().toArray();
@@ -38,11 +54,11 @@ app.get("/api/logs", async (req, res) => {
   }
 });
 
-// API: Add new log
+// Add new log
 app.post("/api/logs", async (req, res) => {
   try {
     const { player, score } = req.body;
-    if (!player || !score) {
+    if (!player || score === undefined) {
       return res.status(400).json({ error: "Player and score are required" });
     }
     const result = await db.collection("logs").insertOne({ player, score, createdAt: new Date() });
@@ -52,4 +68,32 @@ app.post("/api/logs", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+// Edit log by ID
+app.put("/api/logs/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { player, score } = req.body;
+    const { ObjectId } = await import("mongodb");
+    const updatedLog = await db.collection("logs").findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: { player, score } },
+      { returnDocument: "after" }
+    );
+    res.json(updatedLog.value);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to edit log", details: err.message });
+  }
+});
+
+// Reset logs (delete all)
+app.delete("/api/logs/reset", async (req, res) => {
+  try {
+    await db.collection("logs").deleteMany({});
+    res.json({ success: true, message: "All logs deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to reset logs", details: err.message });
+  }
+});
+
+// 🔹 Start server
+app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
