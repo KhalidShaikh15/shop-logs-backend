@@ -1,101 +1,84 @@
 import express from "express";
-import { MongoClient, ObjectId } from "mongodb";
-import dotenv from "dotenv";
 import cors from "cors";
+import dotenv from "dotenv";
+import { MongoClient, ObjectId } from "mongodb";
 
 dotenv.config();
+
 const app = express();
 app.use(express.json());
+app.use(cors()); // ✅ Allows all origins, adjust if needed
 
-// 🔹 CORS configuration
-const allowedOrigins = ["https://gamehouse26.netlify.app"];
-app.use(cors({
-  origin: function(origin, callback) {
-    // allow requests with no origin (like Postman)
-    if(!origin) return callback(null, true);
-    if(allowedOrigins.indexOf(origin) === -1){
-      return callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
-    }
-    return callback(null, true);
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
-// Handle preflight requests
-app.options("*", cors());
-
-// 🔹 MongoDB Atlas Connection
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI;
 
-let db;
+// MongoDB connection
+const client = new MongoClient(process.env.MONGO_URI);
+let logsCollection;
 
 async function connectDB() {
   try {
-    const client = new MongoClient(MONGO_URI);
     await client.connect();
-    db = client.db("gaminglogs"); // database name
-    console.log("✅ Connected to MongoDB Atlas (gaminglogs db)");
+    const db = client.db("gaminglogs");
+    logsCollection = db.collection("logs");
+    console.log("✅ MongoDB connected");
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
   }
 }
-
 connectDB();
 
-// 🔹 Routes
-
-// Get all logs
+// 🔹 Get all logs
 app.get("/api/logs", async (req, res) => {
   try {
-    const logs = await db.collection("logs").find().toArray();
+    const logs = await logsCollection.find().sort({ createdAt: -1 }).toArray();
     res.json(logs);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch logs", details: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch logs" });
   }
 });
 
-// Add new log
+// 🔹 Add a new log
 app.post("/api/logs", async (req, res) => {
   try {
     const { player, score } = req.body;
     if (!player || score === undefined) {
       return res.status(400).json({ error: "Player and score are required" });
     }
-    const result = await db.collection("logs").insertOne({ player, score, createdAt: new Date() });
-    res.json({ success: true, insertedId: result.insertedId });
+    const log = { player, score, createdAt: new Date() };
+    const result = await logsCollection.insertOne(log);
+    res.json({ success: true, _id: result.insertedId });
   } catch (err) {
-    res.status(500).json({ error: "Failed to add log", details: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to add log" });
   }
 });
 
-// Edit log by ID
+// 🔹 Edit a log
 app.put("/api/logs/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { player, score } = req.body;
-    const updatedLog = await db.collection("logs").findOneAndUpdate(
+    const result = await logsCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: { player, score } },
-      { returnDocument: "after" }
+      { $set: { player, score } }
     );
-    res.json(updatedLog.value);
+    res.json({ success: result.modifiedCount === 1 });
   } catch (err) {
-    res.status(500).json({ error: "Failed to edit log", details: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to edit log" });
   }
 });
 
-// Reset logs (delete all)
+// 🔹 Reset all logs
 app.delete("/api/logs/reset", async (req, res) => {
   try {
-    await db.collection("logs").deleteMany({});
-    res.json({ success: true, message: "All logs deleted successfully" });
+    const result = await logsCollection.deleteMany({});
+    res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
-    res.status(500).json({ error: "Failed to reset logs", details: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to reset logs" });
   }
 });
 
-// 🔹 Start server
-app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
