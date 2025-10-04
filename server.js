@@ -26,7 +26,7 @@ connectDB();
 app.get("/api/logs", async (req, res) => {
   try {
     const logs = await logsCollection.find().sort({ _id: -1 }).toArray();
-    res.json(logs);
+    res.json(Array.isArray(logs) ? logs : []);
   } catch (err) {
     console.error(err);
     res.status(500).json([]);
@@ -50,7 +50,14 @@ app.post("/api/logs", async (req, res) => {
     if (!device || !startTime || !endTime) return res.status(400).json({ error: "Missing fields" });
 
     const result = await logsCollection.insertOne({
-      device, startTime, endTime, controllers, totalPayment, cash, online, createdAt: new Date()
+      device,
+      startTime,
+      endTime,
+      controllers,
+      totalPayment,
+      cash,
+      online,
+      createdAt: new Date()
     });
     res.json({ success: true, _id: result.insertedId });
   } catch (err) {
@@ -83,11 +90,11 @@ app.delete("/api/logs/:id", async (req, res) => {
   }
 });
 
-// Reset all logs (PIN required)
-app.post("/api/logs/reset", async (req, res) => {
+// Reset all logs (DELETE + PIN required)
+app.delete("/api/logs/reset", async (req, res) => {
   try {
     const { pin } = req.body;
-    if (pin !== process.env.RESET_PIN) return res.status(403).json({ error: "Invalid PIN" });
+    if (pin !== "1526") return res.status(403).json({ error: "Invalid PIN" });
 
     await logsCollection.deleteMany({});
     res.json({ success: true });
