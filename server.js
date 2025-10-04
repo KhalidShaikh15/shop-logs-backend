@@ -84,14 +84,15 @@ app.delete("/api/logs/:id", async (req, res) => {
 });
 
 // Reset all logs (PIN required)
-app.delete("/api/logs/reset", async (req, res) => {
+app.post("/api/logs/reset", async (req, res) => {
   try {
     const { pin } = req.body;
-    if (pin !== "1526") return res.status(403).json({ error: "Invalid PIN" });
+    if (pin !== process.env.RESET_PIN) return res.status(403).json({ error: "Invalid PIN" });
 
     await logsCollection.deleteMany({});
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to reset logs" });
   }
 });
