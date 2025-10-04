@@ -1,93 +1,55 @@
 import express from "express";
+import { MongoClient } from "mongodb";
+import dotenv from "dotenv";
 import cors from "cors";
-import PouchDB from "pouchdb";
 
+dotenv.config();
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-// 🔹 CouchDB credentials and ngrok host
-const COUCHDB_USER = "khalid";
-const COUCHDB_PASS = encodeURIComponent("root@root"); // URL-encode special characters
-const COUCHDB_HOST = "b78ce8d13175.ngrok-free.app"; // your ngrok URL
-const COUCHDB_DB = "gaminglogs";
-const ADMIN_PIN = "1526"; // change if needed
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
 
-// Construct CouchDB URL with authentication
-const COUCHDB_URL = `https://${COUCHDB_USER}:${COUCHDB_PASS}@${COUCHDB_HOST}`;
+let db;
 
-// Initialize PouchDB
-const db = new PouchDB(`${COUCHDB_URL}/${COUCHDB_DB}`);
-
-// 🔹 Test database connection
-const testConnection = async () => {
+// Connect to MongoDB
+async function connectDB() {
   try {
-    const info = await db.info();
-    console.log(`Connected to CouchDB database "${info.db_name}" ✅`);
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db("gaminglogs"); // database name
+    console.log("✅ Connected to MongoDB Atlas (gaminglogs db)");
   } catch (err) {
-    console.error("Failed to connect to CouchDB:", err);
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
   }
-};
-await testConnection();
+}
 
-// 🔹 Add log entry
-app.post("/add-log", async (req, res) => {
-  try {
-    const doc = req.body;
-    const response = await db.post(doc);
-    res.json(response);
-  } catch (err) {
-    console.error("Add log error:", err);
-    res.status(500).json({ error: "Failed to add log", details: err.message });
-  }
-});
+connectDB();
 
-// 🔹 Get all logs
-app.get("/logs", async (req, res) => {
+// API: Fetch all logs
+app.get("/api/logs", async (req, res) => {
   try {
-    const result = await db.allDocs({ include_docs: true });
-    const logs = result.rows.map((row) => row.doc);
+    const logs = await db.collection("logs").find().toArray();
     res.json(logs);
   } catch (err) {
-    console.error("Fetch logs error:", err);
     res.status(500).json({ error: "Failed to fetch logs", details: err.message });
   }
 });
 
-// 🔹 Edit a log
-app.put("/edit-log/:id", async (req, res) => {
+// API: Add new log
+app.post("/api/logs", async (req, res) => {
   try {
-    const { id } = req.params;
-    const updatedDoc = req.body;
-
-    const existingDoc = await db.get(id);
-    updatedDoc._id = id;
-    updatedDoc._rev = existingDoc._rev;
-
-    const response = await db.put(updatedDoc);
-    res.json(response);
+    const { player, score } = req.body;
+    if (!player || !score) {
+      return res.status(400).json({ error: "Player and score are required" });
+    }
+    const result = await db.collection("logs").insertOne({ player, score, createdAt: new Date() });
+    res.json({ success: true, insertedId: result.insertedId });
   } catch (err) {
-    console.error("Edit log error:", err);
-    res.status(500).json({ error: "Failed to edit log", details: err.message });
+    res.status(500).json({ error: "Failed to add log", details: err.message });
   }
 });
 
-// 🔹 Delete all logs (Admin only)
-app.post("/reset-logs", async (req, res) => {
-  try {
-    const { pin } = req.body;
-    if (pin !== ADMIN_PIN) return res.status(403).json({ error: "Invalid PIN" });
-
-    const result = await db.allDocs({ include_docs: true });
-    const deletions = result.rows.map((row) => ({ ...row.doc, _deleted: true }));
-
-    await db.bulkDocs(deletions);
-    res.json({ success: true, message: "Logs reset successfully" });
-  } catch (err) {
-    console.error("Reset logs error:", err);
-    res.status(500).json({ error: "Failed to reset logs", details: err.message });
-  }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
