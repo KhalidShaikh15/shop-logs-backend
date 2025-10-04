@@ -1,5 +1,5 @@
 import express from "express";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import dotenv from "dotenv";
 import cors from "cors";
 
@@ -8,19 +8,22 @@ const app = express();
 app.use(express.json());
 
 // 🔹 CORS configuration
-// Allow only your frontend origin (Netlify)
 const allowedOrigins = ["https://gamehouse26.netlify.app"];
 app.use(cors({
-  origin: function(origin, callback){
+  origin: function(origin, callback) {
     // allow requests with no origin (like Postman)
     if(!origin) return callback(null, true);
     if(allowedOrigins.indexOf(origin) === -1){
-      const msg = `CORS policy: This origin (${origin}) is not allowed.`;
-      return callback(new Error(msg), false);
+      return callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
     }
     return callback(null, true);
-  }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+// Handle preflight requests
+app.options("*", cors());
 
 // 🔹 MongoDB Atlas Connection
 const PORT = process.env.PORT || 5000;
@@ -73,7 +76,6 @@ app.put("/api/logs/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { player, score } = req.body;
-    const { ObjectId } = await import("mongodb");
     const updatedLog = await db.collection("logs").findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: { player, score } },
